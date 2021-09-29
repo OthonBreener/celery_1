@@ -21,6 +21,8 @@
   * O primeiro para criar o app celery e definir as tasks
   * O segundo para enviar a função para o broker, utilizando o .delay()
 
+* Resumo retirado da live de python do Dunossauro: https://www.youtube.com/watch?v=ig9hbt-yKkM&ab_channel=EduardoMendes
+
 ## O decorador @task e suas funcionalidades:
 
 O decorador de task fornece vários mecanismos que nos auxiliam a manter a confiabilidade
