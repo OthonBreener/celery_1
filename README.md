@@ -88,6 +88,34 @@ def minha_task(self):
   pass
 ```
 
+* Execeções no retry:
+
+```python
+
+@app.task(
+    name='Texto do documento',
+    bind=True,
+    retry_backoff=True,
+    autoretry_for=(ValueError)
+)
+def minha_task(user):
+
+    if response.status_code == 200:
+      return response.json()
+
+    raise ValueError('Deu erro')
+
+
+@app.task(bind=True, default_retry_delay=30 * 60)  # retry in 30 minutes.
+def add(self, x, y):
+    try:
+        something_raising()
+    except Exception as exc:
+        # overrides the default delay to retry after 1 minute
+        raise self.retry(exc=exc, countdown=60)
+
+```
+
 ## Debug no celery
 
 O celery possui um debugger nativo. Muitas vezes você pode executar a função de maneira simples,
@@ -125,4 +153,48 @@ c()
 
 # Nesse caso o b recebe dois parâmetros: o primeiro seria o resultado de a = x,
 # e o segundo 2 = y
+```
+
+## Executando tasks períodicas
+
+Tarefas podem ser agendadas utilizando o celery beat. O celery usa por padrão o time zone
+UTC. Mas você pode definir usando o:
+
+```sh
+app.conf.timezone = 'Europe/London'
+```
+Para chamar uma tarefa periodicamente, você deve adicionar uma entrada à lista de programação
+do beat:
+
+
+```python 
+
+from celery import Celery
+from celery.schedules import crontab
+
+app = Celery()
+
+@app.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    # Calls test('hello') every 10 seconds.
+    sender.add_periodic_task(10.0, test.s('hello'), name='add every 10')
+
+    # Calls test('world') every 30 seconds
+    sender.add_periodic_task(30.0, test.s('world'), expires=10)
+
+    # Executes every Monday morning at 7:30 a.m.
+    sender.add_periodic_task(
+        crontab(hour=7, minute=30, day_of_week=1),
+        test.s('Happy Mondays!'),
+    )
+
+@app.task
+def test(arg):
+    print(arg)
+
+@app.task
+def add(x, y):
+    z = x + y
+    print(z)
+
 ```
