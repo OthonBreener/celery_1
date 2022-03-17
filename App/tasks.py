@@ -1,9 +1,6 @@
-from celery import Celery
+from email import header
+from celery import Celery, chain, group, chord
 from celery.schedules import crontab
-from celery.exceptions import SoftTimeLimitExceeded
-from json import load, dump
-from celery.contrib import rdb
-from datetime import datetime
 
 app = Celery(broker='pyamqp://guest@localhost//',)
 
@@ -13,37 +10,100 @@ app.conf.update(
     accept_content=['pickle']
 )
 
+# Função agendadas
+
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
 
-    # Calls test('world') every 30 seconds
-    sender.add_periodic_task(10, hellow_world.s(sender))
+    # Executa a cada 30 s
+    sender.add_periodic_task(30, hello.s())
 
-@app.task(bind=True)
-def ola_mundo(self, var):
-    print('Executing task id {0.id}'.format(self.request))
+    # Executa todos os dias as 8:00
+    sender.add_periodic_task(crontab(hour=8, minute=0), funcao_1.s())
 
-    if var.get('controlador') != 'tocando':
-        return "Não enviado"
+    # Executa todas as manhãs de segunda-feira as 8:00
+    sender.add_periodic_task(crontab(hour=8, minute=0, day_of_week=1), funcao_2.s())
 
-    with open('../teste1.json', 'w') as tt:
-        var.update({'task_id': self.request.id})
-        #var.update({'time': 'entrei aqui no ola_mundo'})
-        dump(var, tt)
-
-
-    return "Olá mundo"
+    # Executado no segundo dia de cada mês as 8:00
+    sender. add_periodic_task(crontab(hour=8, minute=0, day_of_month='2'), funcao_3.s())
 
 @app.task
-@app.on_after_configure.connect
-def hellow_world(sender, **kwargs):
+def hello():
+    print('World')
 
-    #rdb.set_trace()
+@app.task
+def funcao_1():
+    pass
 
-    with open('../teste1.json') as tt:
-        var = load(tt)
+@app.task
+def funcao_2():
+    pass
 
-    if var.get('chave') == 'not_selection_botton' and not var.get('task_id'):
-        print("Entrei no if")
+@app.task
+def funcao_3():
+    pass
 
-        sender.add_periodic_task(10, ola_mundo.s(var))
+
+# Trabalhando com funções assincronas
+
+"""
+## Chains
+
+Usamos o chain quando queremos que uma função assincrona
+receba o resultado de outra função assincrona. A segunda 
+task sempre pega o resultado da primeira como o primeiro
+argumento.
+"""
+
+@app.task
+def soma(x, y):
+    return x + y
+
+# A segunda função recebe apenas um argumento, isso pq o valor de retorno da
+# primeira task vai ser o primeiro argumento da segunda. Mesma coisa que: soma.s(3,3)
+resultado = chain(soma.s(1,2), soma.s(3)).apply_async()
+
+
+"""
+## Groups
+
+Groups são usados para executar tarefas em paralelo. A função group
+recebe uma lista de assinaturas.
+"""
+
+tarefas = group([
+    soma.s(2,2), soma.s(4,4)
+])
+
+resultado = tarefas.apply_async()
+
+# Para saber se todas as tarefas já estão completas
+resultado.ready() # True ou False
+
+# Para saber se todas as tarefas executaram com sucesso
+resultado.successful() # True ou False
+
+# Para obter o resultado das tarefas
+resultado.get() # [4,8]
+
+
+"""
+## Chords
+
+Chords é uma tarefa que é executada apenas depois de todas as tarefas
+no conjunto de tarefas serem finalizadas
+"""
+
+@app.task
+def soma_geral(numeros):
+    return sum(numeros)
+
+# O callback é executado depois que o grupo de tasks foi finalizado
+callback = soma_geral.s()
+
+# O Header é um simples grupo de taks
+_header = [soma.s(2,2), soma.s(4, 4)]
+
+resultado_chord = chord(_header)(callback)
+
+resultado_chord.get() # 12
